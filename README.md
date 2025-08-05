@@ -1,0 +1,2 @@
+# StudentManager
+一种使用pymysql模块的由本地数据库实现的学生管理系统，作为python的初级练习

@@ -23,6 +23,7 @@ def addStudent(cursor: pymysql.cursors.DictCursor):
     #放入数据库
     sql = "insert into student(name,age,sex) values(%s,%s,%s)"
     cursor.execute(sql,(name,age,sex))
+    print("已成功添加学生！")
 
 def getDict(outs: str)-> dict:
     """
@@ -96,15 +97,28 @@ def findStudent(cursor: pymysql.cursors.DictCursor):
     for row in rows:
         b.rows.append(row.values())
     print(b)
+    print("查询成功！")
 def delStudent(cursor: pymysql.cursors.DictCursor):
     info_dict = getDict("请根据学生字段找到要删除的学生信息：")
     where,param = whereStudent(info_dict)
-    if not where:
+    if len(param) == 0:
         print("没有搜集到有效字段！")
+        return
+    sql = "select * from student where " + where
+    cursor.execute(sql,param)
+    rows = cursor.fetchall()
+    table = BeautifulTable()
+    for row in rows:
+        table.rows.append(row.values())
+    print("以下是要删除的学生信息：")
+    print(table)
+    if input("是否要删除？（y/n）：") != "y":
+        print("已撤销本次删除！")
         return
     sql = "delete from student where "
     sql += where
     cursor.execute(sql,param)
+    print("删除成功！")
 def modifyStudent(cursor: pymysql.cursors.DictCursor):
     info_dict = getDict("请根据学生字段找到要修改的学生信息：")
     where,where_param = whereStudent(info_dict)
@@ -173,9 +187,30 @@ def addScore(cursor:pymysql.cursors.Cursor):
     """
     cursor.execute(sql,params)
     #</实现加入考试信息>
+
 def findScore(cursor:pymysql.cursors.Cursor):
     info_dict = getDict("请根据字段找到要查询考试信息的学生：")
     where,where_params = whereStudent(info_dict)
+    #<无指定查询时，默认查询全部/>
+    if len(where_params) == 0:
+        sql = """
+            select s.uid,s.name,s.sex,c.cname,c.credit,e.score,e.time
+            from exame e
+            inner join student s on s.uid = e.uid
+            inner join course c on c.cid = e.cid
+        """
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        table = BeautifulTable()
+        table.columns.header = ["uid","name","sex","cname","credit","score","time"]
+        for row in rows:
+            date_t = row["time"]
+            row["time"] = date_t.strftime("%Y-%m-%d")
+            table.rows.append(row.values())
+        print("以下是全部的考试信息：")
+        print(table)
+        return
+    #</无指定查询时，默认查询全部>
     #<查询学生uid/>
     findu_sql = "select uid,name from student where " + where
     cursor.execute(findu_sql,where_params)
@@ -189,15 +224,12 @@ def findScore(cursor:pymysql.cursors.Cursor):
     uid = uids[0]["uid"]
     sname = uids[0]["name"]
     #</查询学生uid>
-    #<获得cid/>
+    #<获得cname/>
     course_name = input("请指定科目：")
-    findc_sql = "select cid from course where cname=%s"
-    cursor.execute(findc_sql,course_name)
-    cid = cursor.fetchone()["cid"]
-    #</获得cid>
+    #</获得cname>
     #<实现查询成绩功能/>
     sql = """
-        select s.uid,s.name,s.sex,c.cname,c.credit,e.score
+        select s.uid,s.name,s.sex,c.cname,c.credit,e.score,e.time
         from exame e
         inner join student s on s.uid = e.uid
         inner join course c on c.cid = e.cid
@@ -212,13 +244,65 @@ def findScore(cursor:pymysql.cursors.Cursor):
     # print(cursor.fetchall())
     rows = cursor.fetchall()
     table = BeautifulTable()
-    table.columns.header = ["uid","name","sex","cname","credit","score"]
+    table.columns.header = ["uid","name","sex","cname","credit","score","time"]
     for row in rows:
+        date_t = row["time"]
+        row["time"] = date_t.strftime("%Y-%m-%d")
         table.rows.append(row.values())
     print(table)
     # </实现查询成绩功能>
+    print("查询成功！")
 
-
+def delScore(cursor:pymysql.cursors.Cursor):
+    info_dict = getDict("请根据字段找到要删除考试信息的学生：")
+    where,where_params = whereStudent(info_dict)
+    #<查询学生uid/>
+    findu_sql = "select uid,name from student where " + where
+    cursor.execute(findu_sql,where_params)
+    uids = cursor.fetchall()
+    if (len(uids) == 0):
+        print("没有查询这位学生！")
+        return
+    if (len(uids) > 1):
+        print("一次仅能删除一名学生的考试信息！")
+        return
+    uid = uids[0]["uid"]
+    #</查询学生uid>
+    #<找到cid/>
+    course_name = input("请指定科目：")
+    findc_sql = "select cid from course where cname=%s"
+    cursor.execute(findc_sql,course_name)
+    cid = cursor.fetchone()["cid"]
+    #</找到cid>
+    params = (uid,cid)
+    #<再次确认/>
+    sql = """
+        select s.name,c.cname,e.time,e.score
+        from exame e
+        inner join student s on s.uid=e.uid
+        inner join course c on c.cid=e.cid
+        where s.uid=%s and c.cid=%s 
+    """
+    cursor.execute(sql,params)
+    table = BeautifulTable()
+    rows = cursor.fetchall()
+    table.columns.header = ["name","cname","time","score"]
+    for row in rows:
+        date_t = row["time"]
+        row["time"] = date_t.strftime("%Y-%m-%d")
+        table.rows.append(row.values())
+    print("以下是要删除的内容：")
+    print(table)
+    if input("确定要删除这条考试信息吗？（y/n）：").lower() != "y":
+        print("已撤销本次删除！")
+        return
+    #</再次确认>
+    sql = """
+        delete from exame where uid=%s and cid=%s 
+    """
+    cursor.execute(sql,params)
+    print("删除成功！")
+    
 def showInterface():
     print("    --------------------------------------------")
     print("           学生管理系统 v1.0        ")
@@ -265,16 +349,13 @@ if __name__ == "__main__":
                 case 1:#添加学生信息
                     addStudent(cursor)
                     connect.commit()
-                    print("已成功添加学生！")
                     pass
                 case 2:#查询学生信息
                     findStudent(cursor)
-                    print("查询成功！")
                     pass
                 case 3:
                     delStudent(cursor)
                     connect.commit()
-                    print("删除成功！")
                     pass
                 case 4:
                     modifyStudent(cursor)
@@ -284,13 +365,15 @@ if __name__ == "__main__":
                     addScore(cursor)
                     connect.commit()
                     pass
-                case 6:
+                case 6:#查询学生成绩信息
                     findScore(cursor)
-                    
                     pass
-                case 7:
+                case 7:#删除学生成绩信息
+                    delScore(cursor)
+                    connect.commit()
                     pass
                 case 8:
+
                     pass
                 case 9:
                     pass

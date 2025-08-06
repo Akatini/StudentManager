@@ -302,7 +302,144 @@ def delScore(cursor:pymysql.cursors.Cursor):
     """
     cursor.execute(sql,params)
     print("删除成功！")
-    
+def modifyScore(cursor: pymysql.cursors.Cursor):
+    info_dict = getDict("请根据字段找到要修改成绩的学生：")
+    where,where_params = whereStudent(info_dict)
+    #<查询学生uid/>
+    findu_sql = "select uid,name from student where " + where
+    cursor.execute(findu_sql,where_params)
+    uids = cursor.fetchall()
+    if (len(uids) == 0):
+        print("没有查询这位学生！")
+        return
+    if (len(uids) > 1):
+        print("一次仅能修改一名学生的成绩！")
+        return
+    uid = uids[0]["uid"]
+    #</查询学生uid>
+    #<找到cid/>
+    course_name = input("请指定科目：")
+    findc_sql = "select cid from course where cname=%s"
+    cursor.execute(findc_sql,course_name)
+    cid = cursor.fetchone()["cid"]
+    #</找到cid>
+    params = (uid,cid)
+    #<再次确认/>
+    sql = """
+        select s.name,c.cname,e.time,e.score
+        from exame e
+        inner join student s on s.uid=e.uid
+        inner join course c on c.cid=e.cid
+        where s.uid=%s and c.cid=%s 
+    """
+    cursor.execute(sql,params)
+    table = BeautifulTable()
+    rows = cursor.fetchall()
+    table.columns.header = ["name","cname","time","score"]
+    for row in rows:
+        date_t = row["time"]
+        row["time"] = date_t.strftime("%Y-%m-%d")
+        table.rows.append(row.values())
+    print("以下是要修改的记录：")
+    print(table)
+    if input("确定要修改这位学生的成绩吗？（y/n）：").lower() != "y":
+        print("已撤销本次修改！")
+        return
+    #</再次确认>
+    #<实现修改成绩/>
+    score = input("请输入新的分数：")
+    sql = "update exame set score=%s where uid=%s and cid=%s"
+    params = (score,uid,cid)
+    cursor.execute(sql,params)
+    #</实现修改成绩>
+    print("修改成功！")
+
+def orderByTotal(cursor: pymysql.cursors.Cursor):
+    sql = """
+        select s.uid,s.name,s.sex,sum(e.score) as total
+        from exame e
+        inner join student s on s.uid = e.uid
+        inner join course c on c.cid = e.cid
+        group by s.uid,s.name,s.sex
+        order by Total desc
+    """
+    cursor.execute(sql)
+    rows = cursor.fetchall()
+    table = BeautifulTable()
+    table.columns.header = ["uid","name","sex","total"]
+    for row in rows:
+        table.rows.append(row.values())
+    print("以下是总成绩信息排行榜：")
+    print(table)
+
+def orderByScore(cursor: pymysql.cursors.Cursor):
+    #<找到科目cid/>
+    course_name = input("请指定科目：")
+    findc_sql = "select cid from course where cname=%s"
+    cursor.execute(findc_sql,course_name)
+    cid = cursor.fetchone()["cid"]
+    #</找到科目cid>
+    #<执行倒序展示/>
+    sql = """
+        select s.uid,s.name,s.sex,c.cname,e.score
+        from exame e
+        inner join student s on s.uid = e.uid
+        inner join course c on c.cid = e.cid
+        where e.cid = %s
+        order by score desc
+    """
+    cursor.execute(sql,cid)
+    rows = cursor.fetchall()
+    table = BeautifulTable()
+    table.columns.header = ["uid","name","sex","cname","score"]
+    for row in rows:
+        table.rows.append(row.values())
+    print(f"以下是{course_name}的成绩信息排行榜：")
+    print(table)
+
+def findConditionScore(cursor: pymysql.cursors.Cursor):
+    course = input("请输入要查询的科目：")
+    choice = input("要找到此科目的（最高分/最低分/平均分）：")
+    match choice:
+        case score if score in ("最高分","最低分"):
+            aggregation = "max(score)" if score=="最高分" else "min(score)"
+            internal = "(select " + aggregation + " from exame where cid=e.cid) "
+            sql = """
+                select s.uid,s.name,s.sex,e.score
+                from exame e
+                inner join student s on s.uid = e.uid
+                inner join course c on c.cid = e.cid
+                where e.score=
+            """
+            sql += internal + "and c.cname=%s"
+            cursor.execute(sql,course)
+            rows = cursor.fetchall()
+            table = BeautifulTable()
+            table.columns.header = ["uid","name","sex","score"]
+            for row in rows:
+                table.rows.append(row.values())
+            print(f"以下是{course}中{choice}的成绩信息：")
+            print(table)
+        case "平均分":
+            aggregation = "avg(score)"
+            sql = """
+                select c.cname,avg(score)
+                from exame e
+                inner join course c on e.cid=c.cid
+                group by c.cname
+                having c.cname=%s
+            """
+            cursor.execute(sql,course)
+            rows = cursor.fetchall()
+            table = BeautifulTable()
+            table.columns.header = ["cname","score"]
+            for row in rows:
+                table.rows.append(row.values())
+            print(f"以下是{course}中{choice}的成绩信息：")
+            print(table)
+        case _:
+            print("没有这一项！")
+
 def showInterface():
     print("    --------------------------------------------")
     print("           学生管理系统 v1.0        ")
@@ -353,11 +490,11 @@ if __name__ == "__main__":
                 case 2:#查询学生信息
                     findStudent(cursor)
                     pass
-                case 3:
+                case 3:#删除学生信息
                     delStudent(cursor)
                     connect.commit()
                     pass
-                case 4:
+                case 4:#修改学生信息
                     modifyStudent(cursor)
                     connect.commit()
                     pass
@@ -372,14 +509,18 @@ if __name__ == "__main__":
                     delScore(cursor)
                     connect.commit()
                     pass
-                case 8:
-
+                case 8:#修改学生成绩信息
+                    modifyScore(cursor)
+                    connect.commit()
                     pass
-                case 9:
+                case 9:#根据总成绩信息排名
+                    orderByTotal(cursor)
                     pass
-                case 10:
+                case 10:#根据单科成绩信息排名
+                    orderByScore(cursor)
                     pass
                 case 11:
+                    findConditionScore(cursor)
                     pass
                 case 0:#退出系统
                     print("安全退出，欢迎下次使用！")
